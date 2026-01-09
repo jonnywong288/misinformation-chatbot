@@ -10,6 +10,7 @@ client = Mistral(api_key=api_key)
 app = FastAPI()
 class Question(BaseModel):
     question: str
+    conversation: str | None = None
 
 def load_domain_knowledge(path="domain_knowledge.txt"):
     with open(path, "r", encoding="utf-8") as f:
@@ -127,3 +128,14 @@ def basic_test(data: Question):
     )
 
     return response.choices[0].message.content
+
+@app.post("/converse")
+def converse(data: Question):
+
+    system_prompt = "You are a helpful assistant"
+
+    if data.conversation == None:
+        response = client.beta.conversations.start()
+
+    else:
+        response = client.beta.conversations.append()
