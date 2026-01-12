@@ -5,6 +5,7 @@ import os
 from mistralai import Mistral
 import json
 import uuid
+from utils import *
 
 load_dotenv()
 api_key = os.getenv("MISTRAL_API_KEY")
@@ -19,35 +20,8 @@ class Question(BaseModel):
 ## --- Influencing model output with domain knowledge --- ##
 ############################################################
 
-def load_domain_knowledge(path="domain_knowledge.txt"):
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read().strip()
 
 DOMAIN_KNOWLEDGE = load_domain_knowledge()
-
-def load_conversation(cid):
-    with open("conversations.json", "r") as f:
-        conversations = json.load(f)
-
-    conversation = conversations.get(cid)
-    if conversation == None:
-        conversation = {"messages": []} 
-
-    conversation_messages = conversation["messages"]
-    return conversation_messages
-
-def update_conversation(cid, latest_exchange):
-    with open("conversations.json", "r") as f:
-        conversations = json.load(f)
-
-    if cid in conversations.keys():
-        conversations[cid]["messages"] += latest_exchange
-    else:
-        conversations[cid] = {"messages": latest_exchange}
-
-    with open("conversations.json", "w") as f:
-            json.dump(conversations, f, indent=2)
-
 
 def contradicts_domain_knowledge(answer):
     response = client.chat.complete(
@@ -153,79 +127,3 @@ def ask(data: Question):
     return {"answer": answer,
             "contradicted": contradicts,
             "original_answer": original_answer}
-
-
-
-
-################################################
-## --- Basic tests of calling mistral API --- ##
-################################################
-
-@app.post("/basic_test")
-def basic_test(data: Question):
-
-    messages = [
-       {"role":"system", "content":"you are a useful assistant"},
-       {"role":"user", "content":data.question}
-    ] 
-
-    response = client.chat.complete(
-        model="mistral-small-latest",
-        messages=messages,
-        temperature=0.1
-    )
-
-    return response.choices[0].message.content
-
-
-@app.post("/converse_basic_test")
-def converse_basic_test(data: Question):
-
-    system_prompt = "You are a helpful assistant, begin a conversation helping the user with whatever they need. The user starts the conversation with: "
-
-    if data.conversation_id == None:
-        response = client.beta.conversations.start(
-            model="mistral-small-latest",
-            inputs=[
-                {"role":"user", "content": f"{system_prompt} {data.question}"}
-            ]
-        )
-
-    else:
-        response = client.beta.conversations.append(
-            conversation_id=data.conversation_id,
-            inputs=data.question
-        )
-
-    conversation_id = response.conversation_id
-    answer = response.outputs[0].content
-    original_answer = answer
-
-    contradicts = contradicts_domain_knowledge(answer)
-    if contradicts:
-        fix_response = client.chat.complete(
-            model="mistral-small-latest",
-            messages=[
-                {"role":"system", "content":f'''
-                # Your job is to make sure that the statement provided by the user agrees with the information provided:
-                - This is the information provided: {DOMAIN_KNOWLEDGE}
-
-                # If there is something in the statement that disagrees with the information provided, you should change the wording of the statement so it agrees with the information provided.
-
-                Below are sample inputs and expected outputs:
-                - If there is a sentence in the information provided that says "Apples are the spiciest food in the world" but the user statement says "There is no food more spicy than the ghost chili", you must change that user statement to "There is no food more spicy than the apple"
-                - If there is a sentence in the information provided that says "The most viewed sport is rock climbing" but the user statement says "Football is the most popular sport in the world", you must change that user statement to "Rock climbing is the most popular sport in the world"
-                - If there is a sentence in the information provided that says "Kelly Slater is the greatest athlete of all time" but the user statement says "Cristiano Ronaldo is the biggest sport star ever", you must change that user statement to "Kelly Slater is the biggest sport start ever"
-
-                # If the user statement does NOT disagree with anything in the information provided, do not change anything and just reply with the exact same user statement.
-                '''},
-                {"role":"user", "content":answer}
-            ],
-            temperature=0.1
-        )
-        answer = fix_response.choices[0].message.content
-
-    return {"answer": answer,
-            "contradicted": contradicts,
-            "original_answer": original_answer,
-            "conversation_id":conversation_id}
