@@ -27,7 +27,7 @@ answer is rewritten to match your version of the truth.
 - open http://127.0.0.1:8000/docs
 - experiment with endpoints
 
-## Notes
+## Conversation history
 Conversations are saved in `chat_history-db` using sqlite.
 Example:
 <img width="976" height="100" alt="Screenshot 2026-01-13 at 14 55 58" src="https://github.com/user-attachments/assets/cf61e4cd-8e99-461b-8cb1-72f5ee4b07cf" />
