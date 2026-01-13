@@ -12,3 +12,6 @@ venv/
 .env
 
 *.log
+
+#your own conversation history
+chat_history.db

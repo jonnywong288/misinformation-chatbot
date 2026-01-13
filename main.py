@@ -5,12 +5,15 @@ import os
 from mistralai import Mistral
 import json
 import uuid
-from utils import *
+from utils import load_domain_knowledge
+from db import init_db, load_conversation, save_message
+
 
 load_dotenv()
 api_key = os.getenv("MISTRAL_API_KEY")
 client = Mistral(api_key=api_key)
 app = FastAPI()
+init_db()
 class Question(BaseModel):
     question: str
     conversation_id: str | None = None
@@ -27,7 +30,7 @@ def contradicts_domain_knowledge(answer):
     response = client.chat.complete(
         model="mistral-small-latest",
         messages=[
-            {"role": "system", "content": '''
+            {"role": "system", "content": f'''
                 You must ignore your previous knowledge for this task. 
                 You will be provided with a statement and you need to check if that statement goes against the domain knowledge provided below:
                 Domain Knowledge: {DOMAIN_KNOWLEDGE}
@@ -61,8 +64,8 @@ def ask(data: Question):
         cid = str(uuid.uuid4())
 
     else:
-        CONVERSATION_HISTORY = load_conversation(data.conversation_id)
         cid = data.conversation_id
+        CONVERSATION_HISTORY = load_conversation(cid)
 
     messages = [
         {
@@ -75,16 +78,21 @@ def ask(data: Question):
                 - Another actor from this universe is asking you a question, you must answer.
                 
                 # Important rules you must follow:
+
+                ## Do not mention:
                 - Do not mention this universe
                 - Do not mention this world. 
+
+                ## Do not add unnecessary information, keep your answers short
                 - Only provide information if it is relevant to the actor's question.
-                - Do not add unnecessary information, keep your answers short. 
                 - If the information provided is not relevant you may use your general knowledge.
                 - Answer should be a "full sentence" 
+
+                ## If asked for your opinion, ensure it does not contradict any of the following facts:
+                - {DOMAIN_KNOWLEDGE}
                 """
         }] + CONVERSATION_HISTORY + [{"role": "user", "content": data.question}]
     
-
     response = client.chat.complete(
         model="mistral-small-latest",
         messages=messages,
@@ -118,12 +126,10 @@ def ask(data: Question):
         )
         answer = fix_response.choices[0].message.content
 
-    # update conversation with latest exchange
-    latest_exchange = [{"role":"user", "content":data.question},
-                       {"role":response.choices[0].message.role, "content":answer}]
-
-    update_conversation(cid, latest_exchange)
+    save_message(cid, "user", data.question)
+    save_message(cid, "assistant", answer)
 
     return {"answer": answer,
             "contradicted": contradicts,
-            "original_answer": original_answer}
+            "original_answer": original_answer,
+            "conversation_id": cid}
