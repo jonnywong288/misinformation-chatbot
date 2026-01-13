@@ -6,7 +6,7 @@ from mistralai import Mistral
 import json
 import uuid
 from utils import load_domain_knowledge
-from db import init_db, load_conversation, save_message
+from db import init_db, load_conversation, save_message, trim_conversation_history
 
 
 load_dotenv()
@@ -53,8 +53,29 @@ def contradicts_domain_knowledge(answer):
         ],
         temperature=0
     )
-    print(response.choices[0].message.content)
     return response.choices[0].message.content.strip()[0].lower() == "y"
+
+
+def summarise_old_conversation(old_messages):
+
+    old_messages_formatted = "\n".join(
+            f"{msg['role'].capitalize()}: {msg['content']}" for msg in old_messages
+        )
+
+    response = client.chat.complete(
+        model="mistral-small-latest",
+        messages=[{"role":"system", "content":'''
+            Your job is to summarise the following conversation between the user and the assistant into a single string.
+            The string needs to preserve as much context as possible from the conversation.
+            The string must consist of 2 short sentences.
+            The purpose of the string is to provide context to the model without making conversation history too long.
+        '''},
+        {"role":"user", "content":f'''
+            Summarise the following conversation: {old_messages_formatted}
+        '''}]
+    )
+    return [{"role":"system", "content": f"Summary of older conversation messages: {response.choices[0].message.content}"}]
+
 
 @app.post("/ask")
 def ask(data: Question):
@@ -67,6 +88,19 @@ def ask(data: Question):
         cid = data.conversation_id
         CONVERSATION_HISTORY = load_conversation(cid)
 
+        #summarise long conversations
+        if len(CONVERSATION_HISTORY) > 20: 
+            old_messages = CONVERSATION_HISTORY[:-10]
+            recent_messages = CONVERSATION_HISTORY[-10:]
+
+            old_messages_summarised = summarise_old_conversation(old_messages)
+            CONVERSATION_HISTORY = old_messages_summarised + recent_messages
+            print(CONVERSATION_HISTORY)
+
+            trim_conversation_history(cid, CONVERSATION_HISTORY)
+            
+
+    
     messages = [
         {
                 "role": "system",
@@ -92,6 +126,8 @@ def ask(data: Question):
                 - {DOMAIN_KNOWLEDGE}
                 """
         }] + CONVERSATION_HISTORY + [{"role": "user", "content": data.question}]
+    print(len(messages))
+    print(messages[1:])
     
     response = client.chat.complete(
         model="mistral-small-latest",

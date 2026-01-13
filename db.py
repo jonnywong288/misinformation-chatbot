@@ -23,7 +23,14 @@ def load_conversation(cid):
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT role, content FROM chat_history WHERE conversation_id=? ORDER BY id",
+        """
+        SELECT role, content
+        FROM chat_history
+        WHERE conversation_id=?
+        ORDER BY
+            CASE WHEN role = 'system' THEN 0 ELSE 1 END,
+            id
+        """,
         (cid,)
     )
 
@@ -40,6 +47,24 @@ def save_message(cid, role, content):
         "INSERT INTO chat_history (conversation_id, role, content) VALUES (?, ?, ?)",
         (cid, role, content)
     )
+
+    conn.commit()
+    conn.close()
+
+def trim_conversation_history(cid, new_conversation_history):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute(
+        "delete from chat_history where conversation_id = ?",
+        (cid,)
+    )
+
+    for i in new_conversation_history:
+        cur.execute(
+            "INSERT INTO chat_history (conversation_id, role, content) VALUES (?, ?, ?)",
+            (cid, i["role"], i["content"])
+        )
 
     conn.commit()
     conn.close()
