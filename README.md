@@ -12,6 +12,7 @@ answer is rewritten to match your version of the truth.
 - Model generates an answer after being showing the information in `domain_knowledge.txt`
 - There is an additional check to see if the model output contradicts `domain_knowledge.txt`, if so, the answer is corrected
 - Conversations are stored in `chat_history.db` using `sqlite`
+- After a certain length, older messages are replaced in the database by a summary of early conversation history.
 
 ## Files
 
